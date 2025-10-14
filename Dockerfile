@@ -9,5 +9,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 3000
 
-CMD ["python", "bot.py"]
-CMD ["python", "-m", "http.server", "3000"]
+CMD ["python", "bot.py", "-m", "http.server", "3000"]
