@@ -4,9 +4,9 @@ from discord import app_commands
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))              # サーバID
-WATCH_CHANNEL_ID = int(os.getenv("WATCH_CHANNEL_ID", "0"))  # 監視チャンネルID（書き込み可チャンネル）
-ASSIGN_ROLE_ID = int(os.getenv("ASSIGN_ROLE_ID", "0"))      # 付与するロールID
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))      # 入退室表示チャンネルID
+WATCH_CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))  # 監視チャンネルID（書き込み可チャンネル）
+ASSIGN_ROLE_ID = int(os.getenv("ROLE_ID", "0"))      # 付与するロールID
+LOG_CHANNEL_ID = int(os.getenv("LOGIN_CHANNEL_ID", "0"))      # 入退室表示チャンネルID
 
 intents = discord.Intents.default()
 # 権限: メンバー一覧・メッセージ内容・メンバーイベント
@@ -37,7 +37,7 @@ async def on_member_join(member: discord.Member):
     try:
         ch = client.get_channel(LOG_CHANNEL_ID)
         if ch:
-            await ch.send(f"✅ **{member.display_name}** さんが参加しました。ようこそ！")
+            await ch.send(f"✅ **{member.display_name}** さんが参加しました。ようこそ！\n**@{CHANNEL_ID}** チャンネルで最初のメッセージを送るとチャンネルの閲覧が可能になります。")
     except Exception as e:
         print(f"on_member_join error: {e}")
 
