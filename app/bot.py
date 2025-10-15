@@ -3,7 +3,6 @@ import discord
 from discord import app_commands
 import sys
 import threading
-from flask import Flask
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))              # サーバID
@@ -84,16 +83,6 @@ async def on_message(message: discord.Message):
         except Exception as e:
             await message.channel.send(f"⚠️ ロール付与時にエラーが発生しました: {e}")
 
-app = Flask(__name__)
-@app.route("/")
-def home():
-    return "Bot is running.", 200
-
-def run_flask():
-    port = int(os.getenv("PORT", "3000"))
-    app.run(host="0.0.0.0", port=port)
-threading.Thread(target=run_flask, daemon=True).start()
-
 if __name__ == "__main__":
     try:
         client.run(TOKEN)
@@ -101,8 +90,3 @@ if __name__ == "__main__":
         print(f"Fatal error in client.run(): {e}")
         sys.exit(1)
     
-    try:
-        run_flask()
-    except Exception as e:
-        print(f"Fatal error in Flask server: {e}")
-        sys.exit(1)
