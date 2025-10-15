@@ -12,4 +12,4 @@ RUN chmod +x /usr/src/app/run_all.sh
 
 EXPOSE 3000
 
-CMD ["./run_all.sh"]
+CMD ["python", "/usr/src/app/bot.py", "--host", "0.0.0.0", "--port", "3000"]
