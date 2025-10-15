@@ -1,92 +1,109 @@
 import os
-import discord
-from discord import app_commands
 import sys
-import threading
+import logging
+import traceback
+import discord
+from discord.ext import commands
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("rolebot")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID", "0"))              # サーバID
-WATCH_CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))  # 監視チャンネルID（書き込み可チャンネル）
-ASSIGN_ROLE_ID = int(os.getenv("ROLE_ID", "0"))      # 付与するロールID
-LOG_CHANNEL_ID = int(os.getenv("LOGIN_CHANNEL_ID", "0"))      # 入退室表示チャンネルID
+GUILD_ID = int(os.getenv("GUILD_ID", "0"))
+WATCH_CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
+ASSIGN_ROLE_ID = int(os.getenv("ROLE_ID", "0"))
+LOGIN_CHANNEL_ID = int(os.getenv("LOGIN_CHANNEL_ID", "0"))
+RULE_CHANNEL_ID = int(os.getenv("RULE_CHANNEL_ID", "0"))
+
+# 設定の簡易チェック
+if not TOKEN:
+    logger.error("DISCORD_TOKEN is not set. Exiting.")
+    sys.exit(1)
 
 intents = discord.Intents.default()
-# 権限: メンバー一覧・メッセージ内容・メンバーイベント
 intents.members = True
 intents.message_content = True
 intents.guilds = True
 
-class MyClient(discord.Client):
-    def __init__(self):
-        super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-    async def setup_hook(self):
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-
-client = MyClient()
-
-@client.event
+@bot.event
 async def on_ready():
-    print(f"Logged in as {client.user} (ID: {client.user.id})")
+    logger.info("Logged in as %s (ID: %s)", bot.user, bot.user.id)
 
-@client.event
-async def on_member_join(member: discord.Member):
-    # 参加通知
+@bot.event
+async def on_member_join(member):
     try:
-        ch = client.get_channel(LOG_CHANNEL_ID)
+        ch = bot.get_channel(LOGIN_CHANNEL_ID)
         if ch:
+            await ch.send(f"✅ {member.display_name} joined. Send a message in <#{WATCH_CHANNEL_ID}> to get role.")
             await ch.send(
-                f"✅ **{member.display_name}** さんが参加しました。ようこそ！\n"
-                f"最初のメッセージを {WATCH_CHANNEL_ID} に送ると閲覧権限が付与されます。"
+                f"""こんにちは、{member.mention} さん！\n
+                サーバーへようこそ！\n
+                <#{RULE_CHANNEL_ID}> を読んで <#{WATCH_CHANNEL_ID}> チャンネルでメッセージを送信してください。"""
             )
-    except Exception as e:
-        print(f"on_member_join error: {e}")
+    except Exception:
+        logger.exception("on_member_join error")
 
-@client.event
-async def on_member_remove(member: discord.Member):
-    # 退出通知
-    try:
-        ch = client.get_channel(LOG_CHANNEL_ID)
-        if ch:
-            await ch.send(f"👋 **{member.display_name}** さんが退出しました。")
-    except Exception as e:
-        print(f"on_member_remove error: {e}")
+@bot.event
+async def on_message(message):
+    # debug print of every message (keep this to confirm channel ids)
+    logger.info("Message from %s (id=%s) in channel %s (id=%s): %s",
+                getattr(message.author, "display_name", message.author),
+                message.author.id,
+                getattr(message.channel, "name", str(message.channel)),
+                message.channel.id,
+                message.content)
 
-@client.event
-async def on_message(message: discord.Message):
-    # Bot自身やDMは無視
+    # ignore bots and DMs
     if message.author.bot or not message.guild:
         return
-    if message.channel.id != WATCH_CHANNEL_ID:
+
+    # 重要: 確認用ログ
+    if WATCH_CHANNEL_ID:
+        if message.channel.id != WATCH_CHANNEL_ID:
+            logger.debug("Message channel id %s != WATCH_CHANNEL_ID %s -> ignoring", message.channel.id, WATCH_CHANNEL_ID)
+            return
+    else:
+        logger.warning("WATCH_CHANNEL_ID not set; ignoring messages")
         return
 
-    # すでに対象ロールを持っていたら何もしない
+    # ロールを取得
     role = message.guild.get_role(ASSIGN_ROLE_ID)
     if role is None:
-        return  # ロール未発見（IDミスなど）
+        logger.warning("Role with ID %s not found in guild %s. Available roles: %s",
+                       ASSIGN_ROLE_ID, message.guild.id, [r.id for r in message.guild.roles])
+        return
 
-    member: discord.Member = message.author
+    member = message.author  # discord.Member
 
-    # 「@everyone のみ」or 「対象ロール未所持」を基準に付与（片方で十分なら条件を簡略化OK）
-    has_target = role in member.roles
-    if not has_target:
+    # 既に持っているか？
+    if role in member.roles:
+        logger.info("Member %s already has role %s", member.display_name, role.name)
+        return
+
+    # 追加トライ
+    try:
+        logger.info("Attempting to add role %s to member %s", role.name, member.display_name)
+        await member.add_roles(role, reason="Auto-assign on first message")
+        await message.channel.send(f"{member.mention} さんにロール **{role.name}** を付与しました！")
+        logger.info("Role added successfully")
+    except discord.Forbidden:
+        logger.exception("Forbidden: Bot lacks permissions or role position is too low. Bot role position must be above target role and it needs Manage Roles permission.")
         try:
-            # 付与はBotの最高位ロール>対象ロール でないと失敗します（サーバ設定必須）
-            await member.add_roles(role, reason="初回書き込み検知による自動ロール付与")
-            await message.channel.send(f"{member.mention} さんにロール **{role.name}** を付与しました！")
-        except discord.Forbidden:
-            await message.channel.send("⚠️ 権限不足でロールを付与できません。Botのロール位置や権限（Manage Roles）を確認してください。")
-        except Exception as e:
-            await message.channel.send(f"⚠️ ロール付与時にエラーが発生しました: {e}")
+            await message.channel.send("⚠️ Bot cannot assign roles (missing Manage Roles or role position). Please check bot permissions.")
+        except Exception:
+            pass
+    except Exception:
+        logger.exception("Failed to add role")
 
+    # allow commands to be processed if you later add any commands
+    await bot.process_commands(message)
+
+# Run
 if __name__ == "__main__":
     try:
-        client.run(TOKEN)
-    except Exception as e:
-        print(f"Fatal error in client.run(): {e}")
+        bot.run(TOKEN)
+    except Exception:
+        logger.exception("Fatal error in bot.run()")
         sys.exit(1)
-    
