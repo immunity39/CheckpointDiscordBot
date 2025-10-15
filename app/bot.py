@@ -1,6 +1,7 @@
 import os
 import discord
 from discord import app_commands
+import sys
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))              # サーバID
@@ -37,7 +38,10 @@ async def on_member_join(member: discord.Member):
     try:
         ch = client.get_channel(LOG_CHANNEL_ID)
         if ch:
-            await ch.send(f"✅ **{member.display_name}** さんが参加しました。ようこそ！\n**@{CHANNEL_ID}** チャンネルで最初のメッセージを送るとチャンネルの閲覧が可能になります。")
+            await ch.send(
+                f"✅ **{member.display_name}** さんが参加しました。ようこそ！\n"
+                f"最初のメッセージを {WATCH_CHANNEL_ID} に送ると閲覧権限が付与されます。"
+            )
     except Exception as e:
         print(f"on_member_join error: {e}")
 
@@ -77,3 +81,10 @@ async def on_message(message: discord.Message):
             await message.channel.send("⚠️ 権限不足でロールを付与できません。Botのロール位置や権限（Manage Roles）を確認してください。")
         except Exception as e:
             await message.channel.send(f"⚠️ ロール付与時にエラーが発生しました: {e}")
+
+if __name__ == "__main__":
+    try:
+        client.run(TOKEN)
+    except Exception as e:
+        print(f"Fatal error in client.run(): {e}")
+        sys.exit(1)
